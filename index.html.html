@@ -1,0 +1,649 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Ramo de Margaritas</title>
+<link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@1,300;1,400&family=Jost:wght@200;300&display=swap" rel="stylesheet">
+<style>
+  *, *::before, *::after { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    width: 100%; height: 100%;
+    background: #f5ede0;
+    overflow: hidden;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  canvas { display: block; }
+
+  .title {
+    position: fixed;
+    bottom: 32px;
+    left: 50%;
+    transform: translateX(-50%);
+    font-family: 'Cormorant Garamond', serif;
+    font-style: italic;
+    font-weight: 300;
+    font-size: clamp(1.6rem, 4vw, 2.8rem);
+    color: #b0845a;
+    opacity: 0;
+    transition: opacity 2.4s ease;
+    white-space: nowrap;
+    z-index: 2;
+    letter-spacing: 0.04em;
+  }
+  .replay-btn {
+    position: fixed;
+    bottom: 24px;
+    right: 28px;
+    background: none;
+    border: 1px solid #c8a882;
+    color: #b0845a;
+    font-size: 0.65rem;
+    letter-spacing: 0.22em;
+    text-transform: uppercase;
+    padding: 8px 18px;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.8s, border-color 0.3s, color 0.3s;
+    z-index: 2;
+    font-family: 'Jost', sans-serif;
+    font-weight: 200;
+  }
+  .replay-btn:hover { border-color: #8a6040; color: #8a6040; }
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div class="title" id="title">con cariño ♡</div>
+<button class="replay-btn" id="replayBtn">↺ redibujar</button>
+
+<script>
+const canvas = document.getElementById('c');
+const ctx = canvas.getContext('2d');
+const W = () => window.innerWidth;
+const H = () => window.innerHeight;
+let CX, CY, S;
+
+function setup() {
+  const dpr = window.devicePixelRatio || 1;
+  canvas.width  = W() * dpr;
+  canvas.height = H() * dpr;
+  canvas.style.width  = W() + 'px';
+  canvas.style.height = H() + 'px';
+  ctx.scale(dpr, dpr);
+  CX = W() / 2;
+  CY = H() / 2;
+  S  = Math.min(W(), H()) / 680;
+}
+
+const easeOut  = t => 1 - Math.pow(1-t, 3);
+const easeOut5 = t => 1 - Math.pow(1-t, 5);
+const easeInOut = t => t < 0.5 ? 2*t*t : -1+(4-2*t)*t;
+
+// ── WRAPPER GEOMETRY ─────────────────────────────────────────────────
+// Fan-shaped paper wrapping like in the photo
+function wrapperGeo() {
+  const cx     = CX;
+  const tipY   = CY + 170 * S;   // bottom tip of the wrap (where ribbon is)
+  const spread = 210 * S;         // half-width at top
+  const topY   = CY - 90 * S;    // top of the paper wrap
+  return { cx, tipY, spread, topY };
+}
+
+// Draw the layered fan wrapping paper (light blue/grey like the photo)
+function drawWrapper(progress) {
+  const { cx, tipY, spread, topY } = wrapperGeo();
+  const p = easeOut5(progress);
+
+  // layers of paper — staggered fans, back to front
+  const layers = [
+    { offX: -18*S, offSpread: 1.08, color: '#c8d8e8', alpha: 0.82 },
+    { offX:  20*S, offSpread: 1.05, color: '#d4e2ee', alpha: 0.78 },
+    { offX:  -8*S, offSpread: 0.98, color: '#dce8f2', alpha: 0.85 },
+    { offX:   4*S, offSpread: 0.93, color: '#e2ecf5', alpha: 0.90 },
+    // center front layer
+    { offX:   0,   offSpread: 0.86, color: '#e8f1f8', alpha: 0.95 },
+  ];
+
+  ctx.save();
+  // Only reveal downward from tipY as progress goes 0→1
+  const revealTop = tipY - (tipY - topY) * p;
+
+  layers.forEach((l, i) => {
+    const lCX   = cx + l.offX * (1 - p * 0.3);
+    const lSprd = spread * l.offSpread;
+    const lTopY = topY - i * 8 * S; // back layers slightly higher
+
+    ctx.save();
+    ctx.globalAlpha = l.alpha * p;
+
+    // Main fan shape
+    ctx.beginPath();
+    ctx.moveTo(lCX, tipY);
+    ctx.lineTo(lCX - lSprd, Math.max(lTopY, revealTop));
+    // Top edge with slight curve
+    ctx.quadraticCurveTo(lCX, lTopY - 12*S, lCX + lSprd, Math.max(lTopY, revealTop));
+    ctx.closePath();
+
+    // Paper gradient — gives it depth
+    const gr = ctx.createLinearGradient(lCX - lSprd, 0, lCX + lSprd, 0);
+    gr.addColorStop(0,   shadeColor(l.color, -18));
+    gr.addColorStop(0.3, l.color);
+    gr.addColorStop(0.5, shadeColor(l.color, 10));
+    gr.addColorStop(0.7, l.color);
+    gr.addColorStop(1,   shadeColor(l.color, -12));
+    ctx.fillStyle = gr;
+    ctx.fill();
+
+    // Subtle fold lines on the paper
+    ctx.globalAlpha = 0.12 * p;
+    ctx.strokeStyle = '#a0b8cc';
+    ctx.lineWidth = 0.7;
+    for (let f = 1; f <= 3; f++) {
+      const fx = lCX - lSprd + lSprd * 2 * f / 4;
+      const fy = lTopY - 4*S;
+      ctx.beginPath();
+      ctx.moveTo(lCX, tipY);
+      ctx.lineTo(fx, fy);
+      ctx.stroke();
+    }
+
+    // Decorative embossed border on each panel
+    if (p > 0.6) {
+      ctx.globalAlpha = 0.18 * p;
+      ctx.strokeStyle = '#90adc0';
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.moveTo(lCX, tipY - 2);
+      ctx.lineTo(lCX - lSprd * 0.88, lTopY + 16*S);
+      ctx.moveTo(lCX, tipY - 2);
+      ctx.lineTo(lCX + lSprd * 0.88, lTopY + 16*S);
+      ctx.stroke();
+    }
+
+    ctx.restore();
+  });
+
+  ctx.restore();
+}
+
+// Top decorative scalloped/rectangular tabs (like the photo)
+function drawWrapperTabs(progress) {
+  const { cx, tipY, spread, topY } = wrapperGeo();
+  const p = easeOut5(progress);
+
+  const tabs = [
+    { x: cx - 60*S, w: 52*S, h: 38*S, color: '#c0d4e4', rot: -0.22 },
+    { x: cx + 14*S, w: 54*S, h: 42*S, color: '#ccdcea', rot:  0.08 },
+    { x: cx - 10*S, w: 48*S, h: 36*S, color: '#d0e0ee', rot: -0.05 },
+    { x: cx + 68*S, w: 46*S, h: 34*S, color: '#bccede', rot:  0.28 },
+    { x: cx - 84*S, w: 44*S, h: 32*S, color: '#c4d6e6', rot: -0.32 },
+  ];
+
+  ctx.save();
+  tabs.forEach(t => {
+    ctx.save();
+    ctx.globalAlpha = 0.88 * p;
+    ctx.translate(t.x + t.w/2, topY - 4*S);
+    ctx.rotate(t.rot);
+    // Rectangular tab with slightly rounded top
+    ctx.beginPath();
+    const rx = -t.w/2, ry = -t.h * p;
+    ctx.roundRect(rx, ry, t.w, t.h * p, [4, 4, 0, 0]);
+    const gr = ctx.createLinearGradient(rx, ry, rx + t.w, ry);
+    gr.addColorStop(0,   shadeColor(t.color, -10));
+    gr.addColorStop(0.5, shadeColor(t.color, 8));
+    gr.addColorStop(1,   shadeColor(t.color, -6));
+    ctx.fillStyle = gr;
+    ctx.fill();
+    // border line detail
+    ctx.strokeStyle = '#90aac0';
+    ctx.lineWidth = 0.8;
+    ctx.globalAlpha = 0.3 * p;
+    ctx.stroke();
+    ctx.restore();
+  });
+  ctx.restore();
+}
+
+// ── COLOR HELPER ──────────────────────────────────────────────────
+function shadeColor(hex, amt) {
+  const n = parseInt(hex.replace('#',''), 16);
+  const r = Math.min(255, Math.max(0, (n>>16) + amt));
+  const g = Math.min(255, Math.max(0, ((n>>8)&0xff) + amt));
+  const b = Math.min(255, Math.max(0, (n&0xff) + amt));
+  return `rgb(${r},${g},${b})`;
+}
+
+// ── RIBBON / BOW (cream/white like the photo) ─────────────────────
+function drawBow(progress) {
+  const { cx, tipY } = wrapperGeo();
+  const p = easeOut5(progress);
+  // Position: slightly above the tip
+  const ry = tipY - 28 * S;
+  const bw = 48 * S; // bow width
+
+  ctx.save();
+  ctx.globalAlpha = p;
+
+  // Trailing ribbons going down
+  const ribbonColor = '#e8dcd0';
+  const ribbonDark  = '#d4c4b4';
+
+  // Left trailing ribbon
+  ctx.beginPath();
+  ctx.moveTo(cx - 6*S, ry + 4*S);
+  ctx.bezierCurveTo(cx - 18*S, ry + 40*S, cx - 24*S, ry + 70*S, cx - 16*S, ry + 110*S * p);
+  ctx.bezierCurveTo(cx - 14*S, ry + 115*S * p, cx - 10*S, ry + 115*S * p, cx - 8*S, ry + 110*S * p);
+  ctx.bezierCurveTo(cx - 16*S, ry + 68*S, cx - 10*S, ry + 38*S, cx + 2*S, ry + 4*S);
+  ctx.fillStyle = ribbonColor;
+  ctx.fill();
+
+  // Right trailing ribbon
+  ctx.beginPath();
+  ctx.moveTo(cx + 6*S, ry + 4*S);
+  ctx.bezierCurveTo(cx + 18*S, ry + 40*S, cx + 26*S, ry + 68*S, cx + 18*S, ry + 108*S * p);
+  ctx.bezierCurveTo(cx + 16*S, ry + 113*S * p, cx + 10*S, ry + 114*S * p, cx + 8*S, ry + 109*S * p);
+  ctx.bezierCurveTo(cx + 16*S, ry + 66*S, cx + 12*S, ry + 38*S, cx - 2*S, ry + 4*S);
+  ctx.fillStyle = ribbonDark;
+  ctx.fill();
+
+  // Band across (horizontal)
+  ctx.beginPath();
+  ctx.rect(cx - bw * 1.1, ry - 5*S, bw * 2.2, 10*S);
+  ctx.fillStyle = ribbonColor;
+  ctx.fill();
+
+  // Left bow loop
+  ctx.beginPath();
+  ctx.moveTo(cx, ry);
+  ctx.bezierCurveTo(cx - bw*0.6, ry - 28*S, cx - bw*1.5, ry - 22*S, cx - bw*1.1, ry + 2*S);
+  ctx.bezierCurveTo(cx - bw*0.7, ry + 12*S, cx - bw*0.2, ry + 5*S, cx, ry);
+  ctx.fillStyle = '#ede0d4';
+  ctx.globalAlpha = 0.92 * p;
+  ctx.fill();
+  // Sheen on left loop
+  ctx.beginPath();
+  ctx.moveTo(cx - bw*0.2, ry - 4*S);
+  ctx.bezierCurveTo(cx - bw*0.7, ry - 20*S, cx - bw*1.1, ry - 14*S, cx - bw*0.85, ry + 2*S);
+  ctx.strokeStyle = '#fff8f2';
+  ctx.lineWidth = 1.5;
+  ctx.globalAlpha = 0.35 * p;
+  ctx.stroke();
+
+  // Right bow loop
+  ctx.beginPath();
+  ctx.moveTo(cx, ry);
+  ctx.bezierCurveTo(cx + bw*0.6, ry - 28*S, cx + bw*1.5, ry - 22*S, cx + bw*1.1, ry + 2*S);
+  ctx.bezierCurveTo(cx + bw*0.7, ry + 12*S, cx + bw*0.2, ry + 5*S, cx, ry);
+  ctx.fillStyle = '#dfd2c6';
+  ctx.globalAlpha = 0.9 * p;
+  ctx.fill();
+  // Sheen on right loop
+  ctx.beginPath();
+  ctx.moveTo(cx + bw*0.2, ry - 4*S);
+  ctx.bezierCurveTo(cx + bw*0.7, ry - 20*S, cx + bw*1.1, ry - 14*S, cx + bw*0.85, ry + 2*S);
+  ctx.strokeStyle = '#fff8f2';
+  ctx.lineWidth = 1.2;
+  ctx.globalAlpha = 0.25 * p;
+  ctx.stroke();
+
+  // Center knot
+  ctx.beginPath();
+  ctx.ellipse(cx, ry, 9*S, 7*S, 0, 0, Math.PI*2);
+  ctx.fillStyle = '#e8dcd0';
+  ctx.globalAlpha = p;
+  ctx.fill();
+
+  // Small gift tag
+  if (p > 0.7) {
+    ctx.globalAlpha = (p - 0.7) / 0.3;
+    // tag string
+    ctx.beginPath();
+    ctx.moveTo(cx - 4*S, ry + 12*S);
+    ctx.lineTo(cx - 14*S, ry + 38*S * p);
+    ctx.strokeStyle = '#c4b4a4';
+    ctx.lineWidth = 0.8;
+    ctx.stroke();
+    // tag card
+    ctx.save();
+    ctx.translate(cx - 22*S, ry + 42*S * p);
+    ctx.rotate(0.15);
+    ctx.beginPath();
+    ctx.roundRect(-12*S, -8*S, 24*S, 20*S, 2);
+    ctx.fillStyle = '#f5f0eb';
+    ctx.fill();
+    ctx.strokeStyle = '#d0c0b0';
+    ctx.lineWidth = 0.6;
+    ctx.stroke();
+    // tiny circle (like the Lazos Flores logo circle)
+    ctx.beginPath();
+    ctx.arc(0, 1*S, 5*S, 0, Math.PI*2);
+    ctx.fillStyle = '#e06080';
+    ctx.fill();
+    ctx.restore();
+  }
+
+  ctx.restore();
+  ctx.globalAlpha = 1;
+}
+
+// ── DAISY (white petals, yellow center like photo) ────────────────
+function daisy(x, y, size, rotOffset) {
+  rotOffset = rotOffset || 0;
+  const n = 14;
+  // Outer petals
+  for (let i = 0; i < n; i++) {
+    const a = (i/n) * Math.PI * 2 + rotOffset;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.rotate(a);
+    // Petal shape: slightly elongated ellipse
+    ctx.beginPath();
+    ctx.ellipse(0, -size*0.60, size*0.10, size*0.32, 0, 0, Math.PI*2);
+    // Petals: white with slight cool tint, like the photo
+    const petGrad = ctx.createLinearGradient(0, -size*0.30, 0, -size*0.90);
+    petGrad.addColorStop(0, '#f0f4f8');
+    petGrad.addColorStop(0.5,'#ffffff');
+    petGrad.addColorStop(1, '#e8ecf0');
+    ctx.fillStyle = petGrad;
+    ctx.globalAlpha = 0.96;
+    ctx.fill();
+    // subtle petal vein
+    ctx.beginPath();
+    ctx.moveTo(0, -size*0.28);
+    ctx.lineTo(0, -size*0.82);
+    ctx.strokeStyle = '#d0d8e0';
+    ctx.lineWidth = 0.4;
+    ctx.globalAlpha = 0.3;
+    ctx.stroke();
+    ctx.restore();
+  }
+
+  // Center disc — yellow/orange like photo
+  const g = ctx.createRadialGradient(x, y - size*0.04, 0, x, y, size*0.26);
+  g.addColorStop(0,   '#ffe070');
+  g.addColorStop(0.4, '#f5c030');
+  g.addColorStop(0.75,'#e0a020');
+  g.addColorStop(1,   '#c07010');
+  ctx.beginPath();
+  ctx.arc(x, y, size*0.26, 0, Math.PI*2);
+  ctx.fillStyle = g;
+  ctx.globalAlpha = 1;
+  ctx.fill();
+  // Tiny dot texture on center
+  ctx.globalAlpha = 0.18;
+  for (let d = 0; d < 8; d++) {
+    const da = d / 8 * Math.PI * 2;
+    const dr = size * 0.13;
+    ctx.beginPath();
+    ctx.arc(x + Math.cos(da)*dr, y + Math.sin(da)*dr, size*0.025, 0, Math.PI*2);
+    ctx.fillStyle = '#c06000';
+    ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+}
+
+// ── LEAF ──────────────────────────────────────────────────────────
+function leaf(x, y, size, angle) {
+  ctx.save();
+  ctx.translate(x, y);
+  ctx.rotate(angle);
+  // Main leaf
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.bezierCurveTo(size*.45, -size*.12, size*.75, -size*.52, size*.52, -size*.88);
+  ctx.bezierCurveTo(size*.24, -size*.52, size*.16, -size*.24, 0, 0);
+  const lg = ctx.createLinearGradient(0, 0, size*.5, -size*.8);
+  lg.addColorStop(0, '#4a8a40');
+  lg.addColorStop(0.5,'#5a9e4e');
+  lg.addColorStop(1, '#3a7038');
+  ctx.fillStyle = lg;
+  ctx.globalAlpha = 0.82;
+  ctx.fill();
+  // midrib
+  ctx.beginPath();
+  ctx.moveTo(0, 0);
+  ctx.quadraticCurveTo(size*.3, -size*.42, size*.48, -size*.82);
+  ctx.strokeStyle = '#2a5a28';
+  ctx.lineWidth = 0.9;
+  ctx.globalAlpha = 0.35;
+  ctx.stroke();
+  ctx.restore();
+  ctx.globalAlpha = 1;
+}
+
+// ── BOUQUET LAYOUT ────────────────────────────────────────────────
+function buildBouquet() {
+  const { cx, tipY, topY } = wrapperGeo();
+  const baseY = tipY - 10 * S;
+
+  // Flowers packed densely, like a real daisy bouquet
+  const flowers = [
+    // back row (smallest, highest)
+    { x: cx - 55*S, y: topY - 120*S, size: 27*S, rot: 0.2,  delay: 60  },
+    { x: cx + 50*S, y: topY - 115*S, size: 26*S, rot: -0.3, delay: 100 },
+    { x: cx,        y: topY - 130*S, size: 25*S, rot: 0.5,  delay: 40  },
+    { x: cx - 18*S, y: topY - 110*S, size: 24*S, rot: -0.1, delay: 80  },
+    { x: cx + 72*S, y: topY - 100*S, size: 23*S, rot: 0.4,  delay: 140 },
+    { x: cx - 80*S, y: topY - 95*S,  size: 24*S, rot: -0.5, delay: 120 },
+
+    // mid row
+    { x: cx - 40*S, y: topY - 82*S,  size: 30*S, rot: 0.1,  delay: 240 },
+    { x: cx + 36*S, y: topY - 78*S,  size: 31*S, rot: -0.2, delay: 280 },
+    { x: cx + 90*S, y: topY - 70*S,  size: 28*S, rot: 0.6,  delay: 320 },
+    { x: cx - 95*S, y: topY - 68*S,  size: 27*S, rot: -0.4, delay: 300 },
+    { x: cx + 10*S, y: topY - 88*S,  size: 28*S, rot: 0.3,  delay: 260 },
+
+    // front row (biggest)
+    { x: cx - 68*S, y: topY - 52*S,  size: 34*S, rot: -0.15,delay: 460 },
+    { x: cx + 62*S, y: topY - 48*S,  size: 35*S, rot: 0.22, delay: 500 },
+    { x: cx - 22*S, y: topY - 58*S,  size: 36*S, rot: -0.08,delay: 420 },
+    { x: cx + 22*S, y: topY - 44*S,  size: 34*S, rot: 0.12, delay: 540 },
+    { x: cx,        y: topY - 34*S,  size: 37*S, rot: -0.3, delay: 580 },
+    { x: cx - 105*S,y: topY - 40*S,  size: 30*S, rot: -0.6, delay: 620 },
+    { x: cx + 100*S,y: topY - 38*S,  size: 29*S, rot: 0.55, delay: 640 },
+  ];
+
+  const stems = flowers.map((f) => ({
+    x1: f.x,
+    y1: f.y + f.size * 0.28,
+    x2: cx + (f.x - cx) * 0.08,
+    y2: baseY,
+    cpOff: (Math.random() - 0.5) * 20 * S,
+  }));
+
+  const leaves = [
+    { x: cx - 58*S,  y: topY + 12*S, sz: 30*S, angle: -0.55, d: 200 },
+    { x: cx + 60*S,  y: topY + 16*S, sz: 29*S, angle:  0.62, d: 240 },
+    { x: cx - 88*S,  y: topY + 26*S, sz: 26*S, angle: -1.0,  d: 290 },
+    { x: cx + 88*S,  y: topY + 28*S, sz: 25*S, angle:  1.05, d: 310 },
+    { x: cx - 28*S,  y: topY + 36*S, sz: 24*S, angle: -0.25, d: 350 },
+    { x: cx + 30*S,  y: topY + 40*S, sz: 24*S, angle:  0.32, d: 370 },
+  ];
+
+  return { flowers, stems, leaves };
+}
+
+// ── STATE ─────────────────────────────────────────────────────────
+let drawnStems   = [];
+let drawnLeaves  = [];
+let drawnFlowers = [];
+let wrapperProg  = 0;
+let tabsProg     = 0;
+let bowProg      = 0;
+
+function redrawAll() {
+  ctx.clearRect(0, 0, W(), H());
+
+  // Background: soft warm beige like the photo
+  ctx.fillStyle = '#f5ede0';
+  ctx.fillRect(0, 0, W(), H());
+
+  if (wrapperProg > 0) drawWrapper(wrapperProg);
+  if (tabsProg > 0)    drawWrapperTabs(tabsProg);
+
+  // Stems (clipped inside wrapper)
+  const { topY } = wrapperGeo();
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(0, 0, W(), topY + 6*S);
+  ctx.clip();
+  drawnStems.forEach(st => {
+    ctx.beginPath();
+    ctx.moveTo(st.x2, st.y2);
+    ctx.quadraticCurveTo(
+      st.x2 + (st.x1-st.x2)*0.4 + st.cpOff,
+      st.y2 + (st.y1-st.y2)*0.45,
+      st.x1, st.y1
+    );
+    ctx.strokeStyle = '#4a8040';
+    ctx.lineWidth = 1.8*S;
+    ctx.lineCap = 'round';
+    ctx.stroke();
+  });
+  ctx.restore();
+
+  drawnLeaves.forEach(l  => leaf(l.x, l.y, l.sz, l.angle));
+  drawnFlowers.forEach(f => daisy(f.x, f.y, f.size, f.rot));
+
+  // Redraw wrapper on top to overlap flowers at the bottom
+  if (wrapperProg > 0) {
+    // just the lower half of wrapper to cover stem bases
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(0, topY, W(), H());
+    ctx.clip();
+    drawWrapper(wrapperProg);
+    ctx.restore();
+  }
+
+  if (bowProg > 0) drawBow(bowProg);
+}
+
+// ── ANIMATION HELPERS ─────────────────────────────────────────────
+function animateProp(setter, duration, delay, easing) {
+  return new Promise(resolve => {
+    setTimeout(() => {
+      const start = performance.now();
+      function frame(now) {
+        const t = Math.min((now-start)/duration, 1);
+        setter(easing ? easing(t) : t);
+        redrawAll();
+        if (t < 1) requestAnimationFrame(frame); else resolve();
+      }
+      requestAnimationFrame(frame);
+    }, delay || 0);
+  });
+}
+
+function growShape(drawFn, cx, cy, duration, delay=0) {
+  return new Promise(resolve => {
+    setTimeout(() => {
+      const start = performance.now();
+      function frame(now) {
+        const t = Math.min((now-start)/duration, 1);
+        const p = easeOut5(t);
+        ctx.save();
+        ctx.translate(cx, cy);
+        ctx.scale(p, p);
+        ctx.translate(-cx, -cy);
+        drawFn();
+        ctx.restore();
+        if (t < 1) requestAnimationFrame(frame);
+        else { drawFn(); resolve(); }
+      }
+      requestAnimationFrame(frame);
+    }, delay);
+  });
+}
+
+// ── MAIN ANIMATE ──────────────────────────────────────────────────
+async function animate() {
+  drawnStems   = [];
+  drawnLeaves  = [];
+  drawnFlowers = [];
+  wrapperProg  = 0;
+  tabsProg     = 0;
+  bowProg      = 0;
+
+  redrawAll();
+  document.getElementById('title').style.opacity = '0';
+  document.getElementById('replayBtn').style.opacity = '0';
+
+  const { flowers, stems, leaves } = buildBouquet();
+  stems.forEach(st => { st.cpOff = (Math.random()-0.5)*20*S; });
+
+  // 1. Paper wrapper fans open
+  await animateProp(v => { wrapperProg = v; tabsProg = v * 0.85; }, 800, 0, easeOut5);
+
+  // 2. Stems grow up from wrap
+  await Promise.all(stems.map(st =>
+    new Promise(resolve => {
+      setTimeout(() => {
+        const { topY } = wrapperGeo();
+        const dur = 480, start = performance.now();
+        const cpx = st.x2 + (st.x1-st.x2)*0.4 + st.cpOff;
+        const cpy = st.y2 + (st.y1-st.y2)*0.45;
+        function frame(now) {
+          const t = Math.min((now-start)/dur, 1);
+          const p = easeOut(t);
+          redrawAll();
+          ctx.save();
+          ctx.beginPath();
+          ctx.rect(0, 0, W(), topY + 6*S);
+          ctx.clip();
+          ctx.beginPath();
+          ctx.moveTo(st.x2, st.y2);
+          const steps = Math.max(2, Math.floor(p*30));
+          for (let i = 1; i <= steps; i++) {
+            const s  = (i/steps)*p;
+            const bx = (1-s)*(1-s)*st.x2 + 2*(1-s)*s*cpx + s*s*st.x1;
+            const by = (1-s)*(1-s)*st.y2 + 2*(1-s)*s*cpy + s*s*st.y1;
+            ctx.lineTo(bx, by);
+          }
+          ctx.strokeStyle = '#4a8040';
+          ctx.lineWidth = 1.8*S;
+          ctx.lineCap = 'round';
+          ctx.stroke();
+          ctx.restore();
+          if (t < 1) requestAnimationFrame(frame);
+          else { drawnStems.push(st); redrawAll(); resolve(); }
+        }
+        requestAnimationFrame(frame);
+      }, stems.indexOf(st) * 28);
+    })
+  ));
+
+  // 3. Leaves
+  await Promise.all(leaves.map(l =>
+    growShape(() => leaf(l.x, l.y, l.sz, l.angle), l.x, l.y, 280, l.d)
+      .then(() => { drawnLeaves.push(l); redrawAll(); })
+  ));
+
+  // 4. Daisies bloom
+  await Promise.all(flowers.map(f =>
+    growShape(() => daisy(f.x, f.y, f.size, f.rot), f.x, f.y, 460, f.delay)
+      .then(() => { drawnFlowers.push(f); redrawAll(); })
+  ));
+
+  // 5. Bow ties
+  await animateProp(v => { bowProg = v; }, 600, 0, easeOut5);
+
+  // 6. Title fades in
+  document.getElementById('title').style.opacity = '1';
+  document.getElementById('replayBtn').style.opacity = '1';
+}
+
+document.getElementById('replayBtn').addEventListener('click', () => {
+  setTimeout(animate, 80);
+});
+window.addEventListener('resize', () => { setup(); animate(); });
+
+setup();
+animate();
+</script>
+</body>
+</html>
